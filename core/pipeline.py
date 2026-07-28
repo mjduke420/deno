@@ -32,7 +32,7 @@ class Pipeline:
         # Interactive preview runs from a GPU-resident proxy; `render()` remains the
         # full-resolution path used for export.
         self.preview = preview if preview is not None else PreviewRenderer()
-        self._preview_is_denoised = False
+        self._preview_source: np.ndarray | None = None
 
     def load(self, path: str) -> RawImage:
         self._raw = load_raw(path)
@@ -76,13 +76,19 @@ class Pipeline:
         if self._raw is None:
             raise ValueError("No RAW file loaded")
         raw_at_start = self._raw
-        base_srgb8 = linear_to_srgb8(raw_at_start.rgb)
-        denoised_srgb8 = denoiser.denoise(base_srgb8, progress_cb=progress_cb)
+        original = raw_at_start.rgb
+        noisy_srgb8 = linear_to_srgb8(original)
+        denoised_srgb8 = denoiser.denoise(noisy_srgb8, progress_cb=progress_cb)
+
         if self._raw is raw_at_start:
-            self._denoised_base = srgb8_to_linear(denoised_srgb8)
-            # Force the preview proxy to be re-seeded from the denoised image next
-            # time it renders, rather than keeping the noisy one on the GPU.
-            self._preview_is_denoised = not self._using_denoised_base()
+            # The model only speaks 8-bit sRGB (that is what it was trained on), but
+            # adopting its output wholesale would discard the 16-bit RAW decode and
+            # leave every later edit working on quantised data. Instead take only what
+            # the model *changed* and apply that to the full-precision original, so
+            # detail the model left alone keeps its original bit depth.
+            noise = srgb8_to_linear(denoised_srgb8) - srgb8_to_linear(noisy_srgb8)
+            self._denoised_base = np.clip(original + noise, 0.0, 1.0).astype(np.float32)
+            self._invalidate_preview_source()
 
     def render(self) -> np.ndarray:
         """Full-resolution render, in linear RGB. Used for export."""
@@ -95,8 +101,13 @@ class Pipeline:
         """Screen-resolution render as 8-bit sRGB, fast enough for live slider feedback."""
         if self._raw is None:
             raise ValueError("No RAW file loaded")
-        if not self.preview.has_image or self._preview_is_denoised != self._using_denoised_base():
-            self._refresh_preview_source()
+        base = self._base_image()
+        # Compared by identity rather than a "was it denoised?" flag: the flag had to
+        # be updated in lockstep from several places and silently went stale, leaving
+        # the noisy proxy on the GPU after a denoise run finished.
+        if not self.preview.has_image or self._preview_source is not base:
+            self._preview_source = base
+            self.preview.set_image(base)
         return self.preview.render(self.lens, self.tone)
 
     def _base_image(self) -> np.ndarray:
@@ -105,11 +116,14 @@ class Pipeline:
     def _using_denoised_base(self) -> bool:
         return self.denoise_enabled and self._denoised_base is not None
 
+    def _invalidate_preview_source(self) -> None:
+        self._preview_source = None
+
     def _refresh_preview_source(self) -> None:
         """Re-seed the preview proxy — after a load, or when denoise is toggled."""
         if self._raw is None:
             self.preview.clear()
-            self._preview_is_denoised = False
+            self._preview_source = None
             return
-        self._preview_is_denoised = self._using_denoised_base()
-        self.preview.set_image(self._base_image())
+        self._preview_source = self._base_image()
+        self.preview.set_image(self._preview_source)

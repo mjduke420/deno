@@ -33,6 +33,11 @@ TONE_CASES = [
     ToneSettings(highlights=-55.0),
     ToneSettings(whites=35.0, blacks=-25.0),
     ToneSettings(exposure=0.7, contrast=20.0, highlights=-30.0, shadows=40.0, whites=10.0, blacks=-5.0),
+    ToneSettings(vibrance=70.0),
+    ToneSettings(vibrance=-70.0),
+    ToneSettings(dehaze=60.0),
+    ToneSettings(dehaze=-60.0),
+    ToneSettings(exposure=0.4, vibrance=40.0, dehaze=30.0),
 ]
 
 
@@ -138,6 +143,23 @@ def test_gpu_combined_lens_and_tone_matches_cpu():
 
     interior = (slice(8, -8), slice(8, -8))
     assert np.abs(gpu[interior] - cpu[interior]).mean() < 2.0
+
+
+@requires_gpu
+@pytest.mark.parametrize("clarity", [60.0, -60.0])
+def test_gpu_clarity_matches_cpu(clarity):
+    """Clarity blurs, so GPU and CPU differ slightly at the border where the two
+    implementations pad differently; the interior must agree."""
+    rgb = _test_image()
+    renderer = PreviewRenderer(max_dimension=4096, use_gpu=True)
+    renderer.set_image(rgb)
+    tone = ToneSettings(clarity=clarity)
+
+    gpu = renderer.render(LensSettings(), tone).astype(np.int16)
+    cpu = _cpu_reference(rgb, LensSettings(), tone).astype(np.int16)
+
+    interior = (slice(16, -16), slice(16, -16))
+    assert np.abs(gpu[interior] - cpu[interior]).mean() < 1.5
 
 
 @requires_gpu

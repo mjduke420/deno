@@ -25,7 +25,14 @@ from core.lens_correction import (
     LensSettings,
     apply_lens_correction,
 )
-from core.tone_pipeline import _POINT_RANGE, _WORKING_GAMMA, ToneSettings, apply_tone
+from core.tone_pipeline import (
+    _DEHAZE_STRENGTH,
+    _POINT_RANGE,
+    _WORKING_GAMMA,
+    ToneSettings,
+    apply_tone,
+    clarity_blur_radius,
+)
 
 DEFAULT_MAX_DIMENSION = 2048
 
@@ -128,6 +135,9 @@ def _gpu_tone(torch, image, tone: ToneSettings):
     img = image * (2.0**tone.exposure)
     img = torch.clamp(img, min=0.0).pow(_WORKING_GAMMA)
 
+    if tone.dehaze:
+        img = _gpu_dehaze(torch, img, tone.dehaze)
+
     black_point = (tone.blacks / 100.0) * _POINT_RANGE
     white_point = 1.0 + (tone.whites / 100.0) * _POINT_RANGE
     img = (img - black_point) / max(white_point - black_point, 1e-6)
@@ -139,8 +149,59 @@ def _gpu_tone(torch, image, tone: ToneSettings):
     img = img + (tone.highlights / 100.0) * 0.5 * highlight_mask
 
     img = 0.5 + (img - 0.5) * (1.0 + tone.contrast / 100.0)
+
+    if tone.clarity:
+        img = _gpu_clarity(torch, img, tone.clarity)
+    if tone.vibrance:
+        img = _gpu_vibrance(torch, img, tone.vibrance)
+
     img = torch.clamp(img, 0.0, 1.0)
     return img.pow(1.0 / _WORKING_GAMMA)
+
+
+def _gpu_clarity(torch, img, amount: float):
+    """Mirror of `core.tone_pipeline._apply_clarity`."""
+    import torch.nn.functional as F
+
+    height, width = int(img.shape[0]), int(img.shape[1])
+    kernel_size = clarity_blur_radius(height, width)
+    sigma = 0.3 * ((kernel_size - 1) * 0.5 - 1) + 0.8  # OpenCV's sigma-from-ksize rule
+
+    coords = torch.arange(kernel_size, device=img.device, dtype=torch.float32) - (kernel_size - 1) / 2
+    kernel_1d = torch.exp(-(coords**2) / (2 * sigma**2))
+    kernel_1d = kernel_1d / kernel_1d.sum()
+
+    planes = img.permute(2, 0, 1).unsqueeze(0)
+    pad = kernel_size // 2
+    # Separable blur: two 1-D passes instead of one k x k pass.
+    padded = F.pad(planes, (pad, pad, 0, 0), mode="reflect")
+    blurred = F.conv2d(padded, kernel_1d.view(1, 1, 1, -1).expand(3, 1, 1, -1), groups=3)
+    padded = F.pad(blurred, (0, 0, pad, pad), mode="reflect")
+    blurred = F.conv2d(padded, kernel_1d.view(1, 1, -1, 1).expand(3, 1, -1, 1), groups=3)
+    blurred = blurred.squeeze(0).permute(1, 2, 0)
+
+    luminance = img.mean(dim=-1, keepdim=True)
+    midtone_weight = 1.0 - (2.0 * torch.clamp(luminance, 0.0, 1.0) - 1.0) ** 2
+    return img + (amount / 100.0) * midtone_weight * (img - blurred)
+
+
+def _gpu_vibrance(torch, img, amount: float):
+    """Mirror of `core.tone_pipeline._apply_vibrance`."""
+    grey = img.mean(dim=-1, keepdim=True)
+    deviation = img - grey
+    saturation = deviation.abs().max(dim=-1, keepdim=True).values
+    weight = 1.0 - torch.clamp(saturation * 2.0, 0.0, 1.0)
+    return grey + deviation * (1.0 + (amount / 100.0) * weight)
+
+
+def _gpu_dehaze(torch, img, amount: float):
+    """Mirror of `core.tone_pipeline._apply_dehaze`."""
+    strength = (amount / 100.0) * _DEHAZE_STRENGTH
+    dark_channel = img.min(dim=-1, keepdim=True).values
+    veil = torch.quantile(dark_channel.flatten().float(), 0.90).item()
+    if veil <= 1e-6:
+        return img
+    return (img - strength * veil) / max(1.0 - strength * veil, 1e-6)
 
 
 def _gpu_lens_correction(torch, image, lens: LensSettings):

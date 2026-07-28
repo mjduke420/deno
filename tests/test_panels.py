@@ -5,6 +5,8 @@ valueChanged signal, which the app would treat as a fresh user edit and immediat
 write back — clobbering the settings being restored.
 """
 import pytest
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from core.lens_correction import LensSettings
@@ -86,6 +88,71 @@ def test_lens_panel_still_emits_on_real_user_changes(qt_app):
 
     assert len(emissions) == 1
     assert emissions[0].remove_chromatic_aberration is True
+
+
+def _double_click(slider) -> None:
+    slider.mouseDoubleClickEvent(
+        QMouseEvent(
+            QEvent.Type.MouseButtonDblClick,
+            QPointF(0, 0),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+    )
+
+
+def test_exposure_panel_has_the_full_basic_slider_set(qt_app):
+    panel = ExposurePanel()
+    for name in (
+        "exposure", "contrast", "highlights", "shadows", "whites", "blacks",
+        "clarity", "vibrance", "dehaze",
+    ):
+        assert name in panel._sliders, f"missing {name} slider"
+
+
+def test_double_click_resets_a_slider_to_zero(qt_app):
+    panel = ExposurePanel()
+    slider = panel._sliders["clarity"]
+    slider.setValue(70)
+    assert panel.settings().clarity == 70.0
+
+    _double_click(slider)
+
+    assert slider.value() == 0
+    assert panel.settings().clarity == 0.0
+
+
+def test_double_click_reset_notifies_listeners(qt_app):
+    """Resetting must re-render, so it has to emit like any other user change."""
+    panel = ExposurePanel()
+    panel._sliders["exposure"].setValue(200)
+    emissions = []
+    panel.settings_changed.connect(emissions.append)
+
+    _double_click(panel._sliders["exposure"])
+
+    assert emissions and emissions[-1].exposure == 0.0
+
+
+def test_lens_panel_sliders_also_reset_on_double_click(qt_app):
+    panel = LensPanel()
+    slider = panel._sliders["distortion"]
+    slider.setValue(60)
+
+    _double_click(slider)
+
+    assert slider.value() == 0
+    assert panel.settings().distortion == 0.0
+
+
+def test_new_sliders_round_trip(qt_app):
+    panel = ExposurePanel()
+    settings = ToneSettings(clarity=40.0, vibrance=-25.0, dehaze=60.0)
+
+    panel.set_settings(settings)
+
+    assert panel.settings() == settings
 
 
 def test_loading_a_second_photo_fully_replaces_the_first(qt_app):

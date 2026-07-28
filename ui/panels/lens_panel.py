@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.lens_correction import LensSettings
+from ui.panels.exposure_panel import ResettableSlider
 
 # (field name, display label, slider min, slider max)
 _SLIDER_SPECS = [
@@ -38,7 +39,7 @@ class LensPanel(QWidget):
         form = QFormLayout(group)
 
         for field_name, label, lo, hi in _SLIDER_SPECS:
-            slider = QSlider(Qt.Orientation.Horizontal)
+            slider = ResettableSlider()
             slider.setRange(lo, hi)
             slider.setValue(0)
 

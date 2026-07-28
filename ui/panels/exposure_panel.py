@@ -16,7 +16,23 @@ _SLIDER_SPECS = [
     ("shadows", "Shadows", -100, 100, 1.0),
     ("whites", "Whites", -100, 100, 1.0),
     ("blacks", "Blacks", -100, 100, 1.0),
+    ("clarity", "Clarity", -100, 100, 1.0),
+    ("vibrance", "Vibrance", -100, 100, 1.0),
+    ("dehaze", "Dehaze", -100, 100, 1.0),
 ]
+
+
+class ResettableSlider(QSlider):
+    """A slider that snaps back to its default when double-clicked, as in Lightroom."""
+
+    def __init__(self, default_value: int = 0, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._default_value = default_value
+        self.setToolTip("Double-click to reset")
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.setValue(self._default_value)
+        event.accept()
 
 
 class ExposurePanel(QWidget):
@@ -34,7 +50,7 @@ class ExposurePanel(QWidget):
         form = QFormLayout(group)
 
         for field_name, label, lo, hi, divisor in _SLIDER_SPECS:
-            slider = QSlider(Qt.Orientation.Horizontal)
+            slider = ResettableSlider()
             slider.setRange(lo, hi)
             slider.setValue(0)
 

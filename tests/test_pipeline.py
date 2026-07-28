@@ -62,6 +62,70 @@ def test_run_denoise_without_loaded_file_raises():
         pipeline.run_denoise(_FakeDenoiser())
 
 
+def test_enabling_denoise_actually_changes_the_preview():
+    """Regression: the preview tracked 'was it denoised?' with a flag that went stale,
+    so after a denoise run the GPU kept rendering the original noisy proxy."""
+    pipeline = Pipeline()
+    pipeline._raw = _make_raw_image(size=32)
+    before = pipeline.render_preview().copy()
+
+    pipeline.run_denoise(_FakeDenoiser())
+    pipeline.denoise_enabled = True
+    after = pipeline.render_preview()
+
+    assert not np.array_equal(before, after), "denoised result never reached the preview"
+
+
+def test_disabling_denoise_returns_the_preview_to_the_original():
+    pipeline = Pipeline()
+    pipeline._raw = _make_raw_image(size=32)
+    original = pipeline.render_preview().copy()
+
+    pipeline.run_denoise(_FakeDenoiser())
+    pipeline.denoise_enabled = True
+    pipeline.render_preview()
+    pipeline.denoise_enabled = False
+
+    np.testing.assert_array_equal(pipeline.render_preview(), original)
+
+
+def test_denoise_preserves_the_full_precision_of_the_raw_decode():
+    """The model works in 8-bit sRGB, but its output must not quantise the 16-bit
+    decode — only the correction it computed should be applied."""
+
+    class _NoOpDenoiser:
+        """Returns its input unchanged, so the correction is exactly zero."""
+
+        def denoise(self, rgb_uint8, progress_cb=None):
+            return rgb_uint8
+
+    pipeline = Pipeline()
+    # Values deliberately between 8-bit steps, which a round-trip would flatten.
+    fine_detail = np.linspace(0.20001, 0.20009, 16 * 16 * 3, dtype=np.float32).reshape(16, 16, 3)
+    pipeline._raw = RawImage(
+        rgb=fine_detail, iso=100.0, lens_model=None, focal_length_mm=None, aperture=None, shutter_speed=None
+    )
+
+    pipeline.run_denoise(_NoOpDenoiser())
+
+    np.testing.assert_allclose(pipeline._denoised_base, fine_detail, atol=1e-6)
+    assert len(np.unique(pipeline._denoised_base)) > 200, "8-bit round-trip flattened the data"
+
+
+def test_denoise_correction_is_applied_to_the_original():
+    class _BrighteningDenoiser:
+        def denoise(self, rgb_uint8, progress_cb=None):
+            return np.clip(rgb_uint8.astype(np.int16) + 20, 0, 255).astype(np.uint8)
+
+    pipeline = Pipeline()
+    pipeline._raw = _make_raw_image(size=16)
+
+    pipeline.run_denoise(_BrighteningDenoiser())
+
+    assert pipeline._denoised_base.mean() > pipeline._raw.rgb.mean()
+    assert pipeline._denoised_base.max() <= 1.0  # stays in range
+
+
 def test_load_clears_the_denoise_cache_and_resets_the_toggle():
     pipeline = Pipeline()
     pipeline._raw = _make_raw_image()
