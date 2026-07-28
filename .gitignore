@@ -1,0 +1,29 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Downloaded AI denoise weights (~443 MB)
+models/
+
+# Photos: source RAWs and exported JPEGs are data, not source
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+*.CR3
+*.CR2
+*.ORF
+*.NEF
+*.ARW
+*.DNG
+
+# Local catalog, if one is ever created inside the project directory
+catalog.db
+catalog.db-wal
+catalog.db-shm
+thumbs/
+
+# Claude Code local state
+.claude/
