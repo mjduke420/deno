@@ -19,7 +19,12 @@ from ui.photo_delegate import PhotoDelegate
 from ui.workers import ThumbnailLoader
 
 GRID_THUMB_SIZE = 220
-CELL_PADDING = 26
+CELL_PADDING = 14
+# Most frames are 3:2 landscape, so a square cell leaves a band of dead space under
+# every thumbnail. Cells are sized for landscape; portraits render smaller within
+# the same cell rather than stretching the whole grid to fit them.
+CELL_ASPECT = 0.72
+BADGE_ROW_HEIGHT = 20
 PIXMAP_CACHE_LIMIT = 600  # ~220px pixmaps; bounds grid memory to roughly 80 MB
 
 _FLAG_KEYS = {
@@ -149,8 +154,13 @@ class LibraryView(QListView):
         self.setMovement(QListView.Movement.Static)
         self.setUniformItemSizes(True)  # lets the view skip per-item size probing
         self.setIconSize(QSize(thumb_size, thumb_size))
-        self.setGridSize(QSize(thumb_size + CELL_PADDING, thumb_size + CELL_PADDING + 18))
-        self.setSpacing(4)
+        self.setGridSize(
+            QSize(
+                thumb_size + CELL_PADDING,
+                int(thumb_size * CELL_ASPECT) + CELL_PADDING + BADGE_ROW_HEIGHT,
+            )
+        )
+        self.setSpacing(6)
         self.setWordWrap(False)
         self.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)

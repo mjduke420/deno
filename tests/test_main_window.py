@@ -268,6 +268,58 @@ def test_rating_an_empty_selection_is_harmless(window):
     assert window.grid_model.rowCount() == 3
 
 
+def test_returning_to_the_library_keeps_the_edited_photo_selected(window):
+    """Coming back from Develop should land on the photo you were working on,
+    not the top of the grid."""
+    photo = window.grid_model.photo_at(2)
+    window.open_in_develop(photo)
+
+    window.show_library()
+
+    assert window.pages.currentIndex() == LIBRARY_PAGE
+    assert window.library_view.current_photo().id == photo.id
+
+
+def test_selection_is_skipped_when_the_photo_is_filtered_out(window):
+    """Selecting must not crash or pick the wrong photo when the edited one no
+    longer matches the active filter."""
+    photo = window.grid_model.photo_at(0)
+    window.open_in_develop(photo)
+    window.filter_panel.rating_combo.setCurrentIndex(5)  # 5 stars; nothing qualifies
+
+    window.show_library()
+
+    assert window.grid_model.rowCount() == 0
+    assert window.library_view.current_photo() is None
+
+
+def test_denoise_amount_persists_per_photo(window):
+    photo = window.grid_model.photo_at(0)
+    window.open_in_develop(photo)
+
+    window.develop_view._on_denoise_amount_changed(0.25)
+    window.flush_pending_edits()
+
+    assert window.catalog.load_edits(photo.id).denoise_amount == 0.25
+
+
+def test_denoise_amount_is_restored_into_the_panel(window):
+    photo = window.grid_model.photo_at(0)
+    window.catalog.save_edits(photo.id, EditState(denoise_amount=0.5))
+
+    window.open_in_develop(photo)
+
+    assert window.develop_view.denoise_panel.amount() == 0.5
+
+
+def test_histogram_updates_when_a_photo_is_opened(window):
+    photo = window.grid_model.photo_at(0)
+
+    window.open_in_develop(photo)
+
+    assert window.develop_view.histogram._histogram is not None
+
+
 # ---------- folder tree ----------
 
 

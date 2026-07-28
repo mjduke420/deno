@@ -13,12 +13,17 @@ from dataclasses import asdict, dataclass, field, replace
 from core.lens_correction import LensSettings
 from core.tone_pipeline import ToneSettings
 
+DEFAULT_DENOISE_AMOUNT = 0.75
+
 
 @dataclass(frozen=True)
 class EditState:
     tone: ToneSettings = field(default_factory=ToneSettings)
     lens: LensSettings = field(default_factory=LensSettings)
     denoise_enabled: bool = False
+    # How much of the denoise result to blend in. Full strength scrubs fine detail
+    # along with the noise, so the default holds back a little.
+    denoise_amount: float = DEFAULT_DENOISE_AMOUNT  # 0.0 .. 1.0
 
     def to_json(self) -> str:
         return json.dumps(
@@ -26,6 +31,7 @@ class EditState:
                 "tone": asdict(self.tone),
                 "lens": asdict(self.lens),
                 "denoise_enabled": self.denoise_enabled,
+                "denoise_amount": self.denoise_amount,
             }
         )
 
@@ -41,15 +47,25 @@ class EditState:
         if not isinstance(data, dict):
             return cls()
 
+        amount = data.get("denoise_amount", DEFAULT_DENOISE_AMOUNT)
         return cls(
             tone=_build(ToneSettings, data.get("tone")),
             lens=_build(LensSettings, data.get("lens")),
             denoise_enabled=bool(data.get("denoise_enabled", False)),
+            denoise_amount=_clamp_unit(amount),
         )
 
     def is_default(self) -> bool:
         """True when nothing has been adjusted — lets the UI show an 'edited' badge."""
         return self == EditState()
+
+
+def _clamp_unit(value) -> float:
+    """A stored amount outside 0..1 means a corrupt or hand-edited catalog."""
+    try:
+        return min(1.0, max(0.0, float(value)))
+    except (TypeError, ValueError):
+        return DEFAULT_DENOISE_AMOUNT
 
 
 def _build(settings_cls, values):

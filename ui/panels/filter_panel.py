@@ -47,6 +47,7 @@ class FilterPanel(QWidget):
 
         self.folder_tree = QTreeWidget()
         self.folder_tree.setHeaderHidden(True)
+        self.folder_tree.setMinimumHeight(260)  # a library has many shoots; show them
         self.folder_tree.currentItemChanged.connect(lambda *_: self._emit_filter())
         box.addWidget(self.folder_tree)
 

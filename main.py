@@ -5,11 +5,13 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from ui import theme
 from ui.main_window import MainWindow
 
 
 def main() -> None:
     app = QApplication(sys.argv)
+    theme.apply(app)
     window = MainWindow()
     window.show()
     if len(sys.argv) > 1:

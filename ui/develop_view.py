@@ -26,6 +26,7 @@ from core.lens_correction import LensSettings
 from core.pipeline import Pipeline
 from core.raw_loader import RawImage
 from core.tone_pipeline import ToneSettings
+from ui.histogram import HistogramWidget
 from ui.image_view import ImageView
 from ui.panels.denoise_panel import DenoisePanel
 from ui.panels.export_panel import ExportPanel
@@ -63,6 +64,7 @@ class DevelopView(QWidget):
         self.showing_before = False
 
         self.image_view = ImageView(self)
+        self.histogram = HistogramWidget(self)
         self.exposure_panel = ExposurePanel(self)
         self.lens_panel = LensPanel(self)
         self.denoise_panel = DenoisePanel(self)
@@ -71,6 +73,7 @@ class DevelopView(QWidget):
         self.exposure_panel.settings_changed.connect(self._on_tone_settings_changed)
         self.lens_panel.settings_changed.connect(self._on_lens_settings_changed)
         self.denoise_panel.enabled_toggled.connect(self._on_denoise_toggled)
+        self.denoise_panel.amount_changed.connect(self._on_denoise_amount_changed)
         self.export_panel.export_requested.connect(self._on_export_requested)
 
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
@@ -86,8 +89,10 @@ class DevelopView(QWidget):
     def _build_panel_column(self) -> QScrollArea:
         column = QWidget()
         column_layout = QVBoxLayout(column)
-        column_layout.addWidget(self.denoise_panel)
+        # Histogram sits at the top of the column, above the tone controls it describes.
+        column_layout.addWidget(self.histogram)
         column_layout.addWidget(self.exposure_panel)
+        column_layout.addWidget(self.denoise_panel)
         column_layout.addWidget(self.lens_panel)
         column_layout.addWidget(self.export_panel)
         column_layout.addStretch()
@@ -136,8 +141,10 @@ class DevelopView(QWidget):
     def _push_edits_into_panels(self, state: EditState) -> None:
         self.exposure_panel.set_settings(state.tone)
         self.lens_panel.set_settings(state.lens)
-        # Denoise has to be re-run per photo, so the checkbox always starts clear.
+        # Denoise has to be re-run per photo, so the checkbox always starts clear —
+        # but the strength the photo was saved with is restored.
         self.denoise_panel.set_checkbox_checked_silently(False)
+        self.denoise_panel.set_amount_silently(state.denoise_amount)
         self.denoise_panel.show_idle()
 
     # ---------- adjustments ----------
@@ -150,6 +157,12 @@ class DevelopView(QWidget):
     def _on_lens_settings_changed(self, settings: LensSettings) -> None:
         self.pipeline.lens = settings
         self._refresh_view()
+        self.edits_changed.emit()
+
+    def _on_denoise_amount_changed(self, amount: float) -> None:
+        self.pipeline.denoise_amount = amount
+        if self.pipeline.has_denoised_base and self.pipeline.denoise_enabled:
+            self._refresh_view()
         self.edits_changed.emit()
 
     def set_showing_before(self, showing_before: bool) -> None:
@@ -238,7 +251,10 @@ class DevelopView(QWidget):
             return
         # Preview resolution only — a full-resolution render costs seconds per slider
         # tick. Export still goes through the full-resolution path.
-        self._current_qimage = to_qimage(self.pipeline.render_preview())
+        preview = self.pipeline.render_preview()
+        self._current_qimage = to_qimage(preview)
+        # Histogram reflects the current render, so clipping warnings track the edits.
+        self.histogram.set_image(preview)
         self._apply_view_mode()
 
     def _apply_view_mode(self) -> None:

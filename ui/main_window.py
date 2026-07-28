@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QMainWindow,
     QMessageBox,
@@ -236,6 +237,19 @@ class MainWindow(QMainWindow):
         self.flush_pending_edits()
         self.pages.setCurrentIndex(LIBRARY_PAGE)
         self.refresh_photos()
+        # Return to the photo you were editing rather than the top of the grid.
+        if self._current_photo is not None:
+            self.select_photo_in_grid(self._current_photo.id)
+        self.library_view.setFocus()
+
+    def select_photo_in_grid(self, photo_id: int) -> None:
+        """Select and scroll to a photo, if it is in the current filtered view."""
+        row = self.grid_model.row_for_photo_id(photo_id)
+        if row is None:
+            return  # filtered out of the current view
+        index = self.grid_model.index(row, 0)
+        self.library_view.setCurrentIndex(index)
+        self.library_view.scrollTo(index, QAbstractItemView.ScrollHint.EnsureVisible)
 
     def show_develop(self) -> None:
         if not self.develop_view.has_photo():

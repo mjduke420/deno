@@ -11,7 +11,7 @@ from typing import Protocol
 import numpy as np
 
 from core.display import linear_to_srgb8, srgb8_to_linear
-from core.edit_state import EditState
+from core.edit_state import DEFAULT_DENOISE_AMOUNT, EditState
 from core.lens_correction import LensSettings, apply_lens_correction
 from core.preview_renderer import PreviewRenderer
 from core.raw_loader import RawImage, load_raw
@@ -29,14 +29,29 @@ class Pipeline:
         self.lens = LensSettings()
         self.tone = ToneSettings()
         self.denoise_enabled = False
+        self._denoise_amount = DEFAULT_DENOISE_AMOUNT
+        self._blended_base: np.ndarray | None = None  # denoised, blended at the current amount
         # Interactive preview runs from a GPU-resident proxy; `render()` remains the
         # full-resolution path used for export.
         self.preview = preview if preview is not None else PreviewRenderer()
         self._preview_source: np.ndarray | None = None
 
+    @property
+    def denoise_amount(self) -> float:
+        """How much of the denoise result to apply, 0.0 to 1.0."""
+        return self._denoise_amount
+
+    @denoise_amount.setter
+    def denoise_amount(self, amount: float) -> None:
+        amount = min(1.0, max(0.0, float(amount)))
+        if amount != self._denoise_amount:
+            self._denoise_amount = amount
+            self._blended_base = None  # recomputed on next render
+
     def load(self, path: str) -> RawImage:
         self._raw = load_raw(path)
         self._denoised_base = None
+        self._blended_base = None
         self.denoise_enabled = False
         self._refresh_preview_source()
         return self._raw
@@ -51,7 +66,12 @@ class Pipeline:
 
     def edit_state(self) -> EditState:
         """The current adjustments, bundled for persistence in the catalog."""
-        return EditState(tone=self.tone, lens=self.lens, denoise_enabled=self.denoise_enabled)
+        return EditState(
+            tone=self.tone,
+            lens=self.lens,
+            denoise_enabled=self.denoise_enabled,
+            denoise_amount=self._denoise_amount,
+        )
 
     def apply_edit_state(self, state: EditState) -> None:
         """Restore a photo's saved adjustments.
@@ -63,6 +83,7 @@ class Pipeline:
         self.tone = state.tone
         self.lens = state.lens
         self.denoise_enabled = state.denoise_enabled
+        self.denoise_amount = state.denoise_amount
 
     def run_denoise(self, denoiser: Denoiser, progress_cb=None) -> None:
         """Blocking (intended to run on a background thread). Denoises the neutral base
@@ -88,6 +109,7 @@ class Pipeline:
             # detail the model left alone keeps its original bit depth.
             noise = srgb8_to_linear(denoised_srgb8) - srgb8_to_linear(noisy_srgb8)
             self._denoised_base = np.clip(original + noise, 0.0, 1.0).astype(np.float32)
+            self._blended_base = None
             self._invalidate_preview_source()
 
     def render(self) -> np.ndarray:
@@ -111,7 +133,19 @@ class Pipeline:
         return self.preview.render(self.lens, self.tone)
 
     def _base_image(self) -> np.ndarray:
-        return self._denoised_base if self._using_denoised_base() else self._raw.rgb
+        if not self._using_denoised_base():
+            return self._raw.rgb
+        if self._denoise_amount >= 1.0:
+            return self._denoised_base
+        if self._blended_base is None:
+            # Blend toward the original so fine detail the model smoothed away comes
+            # back. Cached, so the identity-based preview check stays stable and this
+            # full-resolution op doesn't run per frame.
+            original = self._raw.rgb
+            self._blended_base = (
+                original + (self._denoised_base - original) * self._denoise_amount
+            ).astype(np.float32)
+        return self._blended_base
 
     def _using_denoised_base(self) -> bool:
         return self.denoise_enabled and self._denoised_base is not None
