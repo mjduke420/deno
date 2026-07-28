@@ -13,6 +13,7 @@ import numpy as np
 from core.display import linear_to_srgb8, srgb8_to_linear
 from core.edit_state import EditState
 from core.lens_correction import LensSettings, apply_lens_correction
+from core.preview_renderer import PreviewRenderer
 from core.raw_loader import RawImage, load_raw
 from core.tone_pipeline import ToneSettings, apply_tone
 
@@ -22,17 +23,22 @@ class Denoiser(Protocol):
 
 
 class Pipeline:
-    def __init__(self) -> None:
+    def __init__(self, preview: PreviewRenderer | None = None) -> None:
         self._raw: RawImage | None = None
         self._denoised_base: np.ndarray | None = None  # linear RGB, cached until reload/re-denoise
         self.lens = LensSettings()
         self.tone = ToneSettings()
         self.denoise_enabled = False
+        # Interactive preview runs from a GPU-resident proxy; `render()` remains the
+        # full-resolution path used for export.
+        self.preview = preview if preview is not None else PreviewRenderer()
+        self._preview_is_denoised = False
 
     def load(self, path: str) -> RawImage:
         self._raw = load_raw(path)
         self._denoised_base = None
         self.denoise_enabled = False
+        self._refresh_preview_source()
         return self._raw
 
     @property
@@ -74,10 +80,36 @@ class Pipeline:
         denoised_srgb8 = denoiser.denoise(base_srgb8, progress_cb=progress_cb)
         if self._raw is raw_at_start:
             self._denoised_base = srgb8_to_linear(denoised_srgb8)
+            # Force the preview proxy to be re-seeded from the denoised image next
+            # time it renders, rather than keeping the noisy one on the GPU.
+            self._preview_is_denoised = not self._using_denoised_base()
 
     def render(self) -> np.ndarray:
+        """Full-resolution render, in linear RGB. Used for export."""
         if self._raw is None:
             raise ValueError("No RAW file loaded")
-        base = self._denoised_base if (self.denoise_enabled and self._denoised_base is not None) else self._raw.rgb
-        img = apply_lens_correction(base, self.lens)
+        img = apply_lens_correction(self._base_image(), self.lens)
         return apply_tone(img, self.tone)
+
+    def render_preview(self) -> np.ndarray:
+        """Screen-resolution render as 8-bit sRGB, fast enough for live slider feedback."""
+        if self._raw is None:
+            raise ValueError("No RAW file loaded")
+        if not self.preview.has_image or self._preview_is_denoised != self._using_denoised_base():
+            self._refresh_preview_source()
+        return self.preview.render(self.lens, self.tone)
+
+    def _base_image(self) -> np.ndarray:
+        return self._denoised_base if self._using_denoised_base() else self._raw.rgb
+
+    def _using_denoised_base(self) -> bool:
+        return self.denoise_enabled and self._denoised_base is not None
+
+    def _refresh_preview_source(self) -> None:
+        """Re-seed the preview proxy — after a load, or when denoise is toggled."""
+        if self._raw is None:
+            self.preview.clear()
+            self._preview_is_denoised = False
+            return
+        self._preview_is_denoised = self._using_denoised_base()
+        self.preview.set_image(self._base_image())

@@ -121,7 +121,11 @@ class DevelopView(QWidget):
         self._push_edits_into_panels(self.pipeline.edit_state())
 
         self.showing_before = False
-        self._original_qimage = to_qimage(raw_image.rgb)
+        # Built at preview resolution too, so opening a photo doesn't pay for a
+        # full-resolution gamma pass just to have a "before" to toggle to.
+        self._original_qimage = to_qimage(
+            self.pipeline.preview.render(LensSettings(), ToneSettings())
+        )
         self._refresh_view()
         self.status_message.emit(format_shooting_info(path, raw_image))
         return True
@@ -232,7 +236,9 @@ class DevelopView(QWidget):
     def _refresh_view(self) -> None:
         if self.pipeline.raw is None:
             return
-        self._current_qimage = to_qimage(self.pipeline.render())
+        # Preview resolution only — a full-resolution render costs seconds per slider
+        # tick. Export still goes through the full-resolution path.
+        self._current_qimage = to_qimage(self.pipeline.render_preview())
         self._apply_view_mode()
 
     def _apply_view_mode(self) -> None:

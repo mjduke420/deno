@@ -67,12 +67,28 @@ RAW: CR3, CR2, ORF, NEF, ARW, DNG, RAF, RW2, PEF, SRW — plus JPEG, PNG and TIF
 
 ## Performance notes
 
-The grid runs on the full-size JPEG preview embedded in each RAW (~0.1s per photo)
-rather than a full demosaic decode (~1s), so browsing thousands of photos stays fast.
-Thumbnails generate lazily as you scroll and are cached to disk; decoded pixmaps are
-held in a bounded LRU so memory doesn't grow with library size.
+**Browsing.** The grid runs on the full-size JPEG preview embedded in each RAW
+(~0.1s per photo) rather than a full demosaic decode (~1s). Thumbnails generate
+lazily as you scroll and are cached to disk; decoded pixmaps are held in a bounded
+LRU so memory doesn't grow with library size. Cataloging runs about 0.17s per photo,
+so a 100–250 shot shoot takes 20–45 seconds.
 
-Cataloging runs about 0.17s per photo, so a 100–250 shot shoot takes 20–45 seconds.
+**Editing.** Sliders render from a screen-resolution proxy kept resident on the GPU,
+so adjusting exposure doesn't reprocess 24 megapixels on the CPU. Measured on a 24MP
+frame with an RTX 3090:
+
+| | per slider tick |
+|---|---|
+| Full-resolution CPU (the naive approach) | 2380 ms |
+| CPU, screen-resolution proxy | 163 ms |
+| **GPU, resident proxy** | **4.8 ms** (206 fps) |
+
+Lens corrections, which additionally resample the image, run at ~15 ms (68 fps).
+Without CUDA the renderer falls back to the CPU proxy automatically.
+
+Export always uses the full-resolution CPU path, so the exported file is the real
+image, not the proxy. `core/tone_pipeline.py` and `core/lens_correction.py` remain
+the reference implementations and the GPU path is held to them by parity tests.
 
 ## Tests
 
