@@ -320,6 +320,123 @@ def test_histogram_updates_when_a_photo_is_opened(window):
     assert window.develop_view.histogram._histogram is not None
 
 
+# ---------- presets ----------
+
+
+def test_saving_a_preset_captures_the_current_adjustments(window):
+    photo = window.grid_model.photo_at(0)
+    window.open_in_develop(photo)
+    window.develop_view._on_tone_settings_changed(ToneSettings(contrast=40.0, clarity=25.0))
+
+    window._on_preset_save("Punchy")
+
+    stored = window.catalog.get_preset_by_name("Punchy")
+    assert stored is not None
+    assert stored.edits.tone.contrast == 40.0
+    assert stored.edits.tone.clarity == 25.0
+
+
+def test_applying_a_preset_changes_the_photo(window):
+    first = window.grid_model.photo_at(0)
+    second = window.grid_model.photo_at(1)
+
+    window.open_in_develop(first)
+    window.develop_view._on_tone_settings_changed(ToneSettings(contrast=40.0))
+    window._on_preset_save("Punchy")
+    preset_id = window.catalog.get_preset_by_name("Punchy").id
+
+    window.open_in_develop(second)
+    assert window.develop_view.edit_state().tone.contrast == 0.0
+
+    window._on_preset_apply(preset_id)
+
+    assert window.develop_view.edit_state().tone.contrast == 40.0
+    assert window.develop_view.exposure_panel.settings().contrast == 40.0
+
+
+def test_applying_a_preset_persists_to_the_photo(window):
+    photo = window.grid_model.photo_at(0)
+    window.open_in_develop(photo)
+    window.develop_view._on_tone_settings_changed(ToneSettings(vibrance=35.0))
+    window._on_preset_save("Vivid")
+    preset_id = window.catalog.get_preset_by_name("Vivid").id
+
+    other = window.grid_model.photo_at(1)
+    window.open_in_develop(other)
+    window._on_preset_apply(preset_id)
+
+    assert window.catalog.load_edits(other.id).tone.vibrance == 35.0
+
+
+def test_presets_appear_in_the_panel(window):
+    window.open_in_develop(window.grid_model.photo_at(0))
+    window._on_preset_save("One")
+    window._on_preset_save("Two")
+
+    combo = window.develop_view.preset_panel.preset_combo
+    names = [combo.itemText(i) for i in range(combo.count())]
+    assert "One" in names and "Two" in names
+
+
+def test_deleting_a_preset_removes_it_from_the_panel(window):
+    window.open_in_develop(window.grid_model.photo_at(0))
+    window._on_preset_save("Doomed")
+    preset_id = window.catalog.get_preset_by_name("Doomed").id
+
+    window._on_preset_delete(preset_id)
+
+    assert window.catalog.get_preset(preset_id) is None
+    assert window.develop_view.preset_panel.preset_combo.count() == 1  # just "none"
+
+
+def test_applying_a_deleted_preset_is_handled(window):
+    """The list can go stale; applying a vanished preset must not crash."""
+    window.open_in_develop(window.grid_model.photo_at(0))
+    window._on_preset_save("Ghost")
+    preset_id = window.catalog.get_preset_by_name("Ghost").id
+    window.catalog.delete_preset(preset_id)
+
+    window._on_preset_apply(preset_id)  # must not raise
+
+
+def test_saving_a_preset_without_a_photo_is_refused(window):
+    window._on_preset_save("Nothing")
+    assert window.catalog.get_preset_by_name("Nothing") is None
+
+
+# ---------- module tabs ----------
+
+
+def test_module_tabs_follow_the_active_module(window):
+    photo = window.grid_model.photo_at(0)
+
+    window.open_in_develop(photo)
+    assert window.module_tabs._buttons[DEVELOP_PAGE].isChecked()
+
+    window.show_library()
+    assert window.module_tabs._buttons[LIBRARY_PAGE].isChecked()
+
+
+def test_clicking_the_develop_tab_switches_module(window):
+    photo = window.grid_model.photo_at(0)
+    window.library_view.setCurrentIndex(window.grid_model.index(0, 0))
+
+    window.module_tabs._buttons[DEVELOP_PAGE].click()
+
+    assert window.pages.currentIndex() == DEVELOP_PAGE
+    assert window.develop_view.current_path == photo.path
+
+
+def test_develop_tab_without_a_selection_stays_on_library(window):
+    window.library_view.clearSelection()
+    window.library_view.setCurrentIndex(window.grid_model.index(-1, -1))
+
+    window.module_tabs._buttons[DEVELOP_PAGE].click()
+
+    assert window.pages.currentIndex() == LIBRARY_PAGE
+    assert window.module_tabs._buttons[LIBRARY_PAGE].isChecked()
+
+
 # ---------- folder tree ----------
 
 

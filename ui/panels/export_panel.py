@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+
+from ui.collapsible_panel import CollapsiblePanel
 
 _DEFAULT_QUALITY = 90
 
@@ -15,8 +17,9 @@ class ExportPanel(QWidget):
         self._quality = _DEFAULT_QUALITY
 
         layout = QVBoxLayout(self)
-        group = QGroupBox("Export")
-        group_layout = QVBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.panel = CollapsiblePanel("Export", self)
+        group_layout = self.panel.content_layout()
 
         quality_row = QWidget()
         quality_row_layout = QHBoxLayout(quality_row)
@@ -39,8 +42,7 @@ class ExportPanel(QWidget):
         self.export_button.clicked.connect(lambda: self.export_requested.emit(self._quality))
         group_layout.addWidget(self.export_button)
 
-        layout.addWidget(group)
-        layout.addStretch()
+        layout.addWidget(self.panel)
 
     def _on_quality_changed(self, value: int) -> None:
         self._quality = value

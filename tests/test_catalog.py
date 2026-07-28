@@ -274,6 +274,91 @@ def test_photo_paths_in_folder_lists_only_that_folders_photos(catalog):
     assert paths[0].endswith("one.CR3")
 
 
+# ---------- presets ----------
+
+
+def test_saving_and_reading_back_a_preset(catalog):
+    state = EditState(tone=ToneSettings(contrast=25.0, clarity=30.0), denoise_amount=0.5)
+
+    preset_id = catalog.save_preset("Punchy Landscape", state)
+
+    stored = catalog.get_preset(preset_id)
+    assert stored.name == "Punchy Landscape"
+    assert stored.edits == state
+
+
+def test_presets_are_listed_alphabetically(catalog):
+    catalog.save_preset("Zebra", EditState())
+    catalog.save_preset("alpha", EditState())
+    catalog.save_preset("Mango", EditState())
+
+    assert [p.name for p in catalog.list_presets()] == ["alpha", "Mango", "Zebra"]
+
+
+def test_saving_an_existing_name_replaces_it(catalog):
+    catalog.save_preset("Portrait", EditState(tone=ToneSettings(contrast=10.0)))
+    catalog.save_preset("Portrait", EditState(tone=ToneSettings(contrast=90.0)))
+
+    presets = catalog.list_presets()
+    assert len(presets) == 1
+    assert presets[0].edits.tone.contrast == 90.0
+
+
+def test_preset_names_are_matched_case_insensitively(catalog):
+    catalog.save_preset("Sunset", EditState())
+    assert catalog.get_preset_by_name("SUNSET") is not None
+
+    catalog.save_preset("sunset", EditState())  # same preset, different casing
+    assert len(catalog.list_presets()) == 1
+
+
+def test_preset_names_are_trimmed_and_cannot_be_blank(catalog):
+    preset_id = catalog.save_preset("  Spacey  ", EditState())
+    assert catalog.get_preset(preset_id).name == "Spacey"
+
+    with pytest.raises(ValueError):
+        catalog.save_preset("   ", EditState())
+
+
+def test_deleting_a_preset(catalog):
+    preset_id = catalog.save_preset("Temporary", EditState())
+
+    catalog.delete_preset(preset_id)
+
+    assert catalog.get_preset(preset_id) is None
+    assert catalog.list_presets() == []
+
+
+def test_unknown_preset_lookups_return_none(catalog):
+    assert catalog.get_preset(999) is None
+    assert catalog.get_preset_by_name("nope") is None
+
+
+def test_presets_survive_reopening_the_catalog(tmp_path):
+    db_path = tmp_path / "presets.db"
+    with Catalog(db_path) as first:
+        first.save_preset("Keeper", EditState(tone=ToneSettings(vibrance=40.0)))
+
+    with Catalog(db_path) as second:
+        stored = second.get_preset_by_name("Keeper")
+        assert stored is not None
+        assert stored.edits.tone.vibrance == 40.0
+
+
+def test_presets_table_is_added_to_an_existing_catalog(tmp_path):
+    """An existing library must gain presets without a rebuild."""
+    db_path = tmp_path / "existing.db"
+    with Catalog(db_path) as first:
+        folder_id = first.add_folder(r"C:\RAW")
+        first.upsert_photo(folder_id, r"C:\RAW\a.CR3")
+        first.set_rating(1, 5)
+
+    with Catalog(db_path) as second:
+        second.save_preset("New Feature", EditState())
+        assert second.get_photo(1).rating == 5  # existing work untouched
+        assert len(second.list_presets()) == 1
+
+
 # ---------- directories / folder tree ----------
 
 

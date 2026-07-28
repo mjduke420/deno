@@ -30,22 +30,44 @@ QGraphicsView {{
     border: 1px solid {BORDER};
 }}
 
-QGroupBox {{
+/* Collapsible panels: the title is a header row inside the frame, not a label
+   floating on the border the way QGroupBox draws it. */
+QFrame#collapsiblePanel {{
     background-color: {PANEL};
     border: 1px solid {BORDER};
     border-radius: 4px;
-    margin-top: 14px;
-    padding: 10px 8px 8px 8px;
+}}
+QWidget#panelHeader {{
+    background-color: {PANEL_RAISED};
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    border-bottom: 1px solid {BORDER};
+}}
+QWidget#panelHeader:hover {{ background-color: #3a3a3a; }}
+QLabel#panelTitle {{
+    color: {TEXT};
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}}
+QLabel#panelArrow {{ color: {TEXT_DIM}; font-size: 10px; }}
+QWidget#panelContent {{ background-color: {PANEL}; border: none; }}
+
+/* Module switcher in the menu bar corner */
+QWidget#moduleTabs {{ background: transparent; }}
+QPushButton#moduleTab {{
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 5px 14px;
+    color: {TEXT_DIM};
     font-weight: 600;
 }}
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 8px;
-    padding: 0 4px;
-    color: {TEXT_DIM};
-    font-size: 10px;
-    letter-spacing: 1px;
+QPushButton#moduleTab:hover {{ color: {TEXT}; }}
+QPushButton#moduleTab:checked {{
+    color: #ffffff;
+    border-bottom: 2px solid {ACCENT};
 }}
 
 QLabel {{ background: transparent; }}

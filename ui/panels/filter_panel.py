@@ -7,7 +7,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
-    QGroupBox,
     QLabel,
     QPushButton,
     QTreeWidget,
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.catalog import COLOR_LABELS, Folder, PhotoFilter
+from ui.collapsible_panel import CollapsiblePanel
 
 _ALL_FOLDERS = "All folders"
 _ANY = "Any"
@@ -41,9 +41,9 @@ class FilterPanel(QWidget):
 
     # ---------- construction ----------
 
-    def _build_folders_group(self) -> QGroupBox:
-        group = QGroupBox("Folders")
-        box = QVBoxLayout(group)
+    def _build_folders_group(self) -> CollapsiblePanel:
+        group = CollapsiblePanel("Folders", self)
+        box = group.content_layout()
 
         self.folder_tree = QTreeWidget()
         self.folder_tree.setHeaderHidden(True)
@@ -62,9 +62,12 @@ class FilterPanel(QWidget):
 
         return group
 
-    def _build_filters_group(self) -> QGroupBox:
-        group = QGroupBox("Filter")
-        form = QFormLayout(group)
+    def _build_filters_group(self) -> CollapsiblePanel:
+        group = CollapsiblePanel("Filter", self)
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(4)
+        group.content_layout().addLayout(form)
 
         self.rating_combo = QComboBox()
         for label, value in _RATING_CHOICES:

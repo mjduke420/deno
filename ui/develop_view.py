@@ -32,6 +32,7 @@ from ui.panels.denoise_panel import DenoisePanel
 from ui.panels.export_panel import ExportPanel
 from ui.panels.exposure_panel import ExposurePanel
 from ui.panels.lens_panel import LensPanel
+from ui.panels.preset_panel import PresetPanel
 from ui.workers import DenoiseWorker
 
 JPEG_FILE_FILTER = "JPEG (*.jpg *.jpeg)"
@@ -69,6 +70,7 @@ class DevelopView(QWidget):
         self.lens_panel = LensPanel(self)
         self.denoise_panel = DenoisePanel(self)
         self.export_panel = ExportPanel(self)
+        self.preset_panel = PresetPanel(self)
 
         self.exposure_panel.settings_changed.connect(self._on_tone_settings_changed)
         self.lens_panel.settings_changed.connect(self._on_lens_settings_changed)
@@ -91,6 +93,7 @@ class DevelopView(QWidget):
         column_layout = QVBoxLayout(column)
         # Histogram sits at the top of the column, above the tone controls it describes.
         column_layout.addWidget(self.histogram)
+        column_layout.addWidget(self.preset_panel)
         column_layout.addWidget(self.exposure_panel)
         column_layout.addWidget(self.denoise_panel)
         column_layout.addWidget(self.lens_panel)
@@ -137,6 +140,15 @@ class DevelopView(QWidget):
 
     def edit_state(self) -> EditState:
         return self.pipeline.edit_state()
+
+    def apply_edit_state(self, state: EditState) -> None:
+        """Apply a preset to the photo currently open."""
+        if self.pipeline.raw is None:
+            return
+        self.pipeline.apply_edit_state(state)
+        self._push_edits_into_panels(state)
+        self._refresh_view()
+        self.edits_changed.emit()
 
     def _push_edits_into_panels(self, state: EditState) -> None:
         self.exposure_panel.set_settings(state.tone)

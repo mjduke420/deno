@@ -15,10 +15,14 @@ moved or copied.
 
 ## Modules
 
+Switch modules with the tabs at the top right, or with the keyboard:
+
 | Key | Module | What it does |
 |-----|--------|--------------|
 | `G` | **Library** | Thumbnail grid, folders, rating and filtering |
-| `D` | **Develop** | Denoise, exposure, lens corrections, single export |
+| `D` | **Develop** | Denoise, exposure, lens corrections, presets, single export |
+
+Every panel collapses — click its title bar to fold away a section you aren't using.
 
 ### Library
 
@@ -45,6 +49,9 @@ library, or quitting all flush your edits to the catalog first.
 
 - **AI Denoise** runs NAFNet-SIDD on the GPU (~13s for a 24MP frame on an RTX 3090).
   It is per-photo and must be re-run after reopening a photo.
+- **Presets** save the current adjustments under a name and apply them to any other
+  photo. Saving over an existing name replaces it. Presets live in the catalog, so
+  they are shared across every folder in your library.
 - `\` toggles the before/after view.
 - Batch export applies exposure and lens corrections but **not** AI denoise, since that
   is a multi-second GPU pass per photo.
@@ -53,7 +60,7 @@ library, or quitting all flush your edits to the catalog first.
 
 ```
 %LOCALAPPDATA%\RawDenoise\
-  catalog.db     <- folders, photos, ratings, flags, labels, per-photo edits
+  catalog.db     <- folders, photos, ratings, flags, labels, per-photo edits, presets
   thumbs\        <- cached grid thumbnails (safe to delete; they regenerate)
 models\          <- NAFNet denoise weights (~443 MB, downloaded on first denoise)
 ```

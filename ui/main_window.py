@@ -24,6 +24,7 @@ from core.scanner import read_metadata
 from core.thumbnails import ThumbnailCache
 from ui.develop_view import DevelopView
 from ui.library_view import LibraryView, PhotoGridModel
+from ui.module_tabs import ModuleTabs
 from ui.panels.filter_panel import FilterPanel
 from ui.panels.library_export_panel import SCOPE_SELECTED, LibraryExportPanel
 from ui.workers import BatchExportWorker, ScanWorker, ThumbnailLoader
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self.refresh_folders()
         self.refresh_photos()
+        self.refresh_presets()
 
     # ---------- construction ----------
 
@@ -95,11 +97,19 @@ class MainWindow(QMainWindow):
         self.develop_view = DevelopView(self)
         self.develop_view.edits_changed.connect(self._on_edits_changed)
         self.develop_view.status_message.connect(self._show_status)
+        self.develop_view.preset_panel.apply_requested.connect(self._on_preset_apply)
+        self.develop_view.preset_panel.save_requested.connect(self._on_preset_save)
+        self.develop_view.preset_panel.delete_requested.connect(self._on_preset_delete)
 
         self.pages = QStackedWidget(self)
         self.pages.addWidget(library_page)
         self.pages.addWidget(self.develop_view)
         self.setCentralWidget(self.pages)
+
+        # Module switcher lives in the menu bar's right corner, always reachable.
+        self.module_tabs = ModuleTabs(["Library", "Develop"], self)
+        self.module_tabs.module_selected.connect(self._on_module_selected)
+        self.menuBar().setCornerWidget(self.module_tabs, Qt.Corner.TopRightCorner)
 
         self.setStatusBar(QStatusBar(self))
         self.scan_progress = QProgressBar()
@@ -233,9 +243,16 @@ class MainWindow(QMainWindow):
 
     # ---------- modules ----------
 
+    def _on_module_selected(self, index: int) -> None:
+        if index == DEVELOP_PAGE:
+            self.show_develop()
+        else:
+            self.show_library()
+
     def show_library(self) -> None:
         self.flush_pending_edits()
         self.pages.setCurrentIndex(LIBRARY_PAGE)
+        self.module_tabs.set_current(LIBRARY_PAGE)
         self.refresh_photos()
         # Return to the photo you were editing rather than the top of the grid.
         if self._current_photo is not None:
@@ -256,10 +273,12 @@ class MainWindow(QMainWindow):
             photo = self.library_view.current_photo()
             if photo is None:
                 self._show_status("Select a photo in the library first")
+                self.module_tabs.set_current(LIBRARY_PAGE)  # the switch didn't happen
                 return
             self.open_in_develop(photo)
             return
         self.pages.setCurrentIndex(DEVELOP_PAGE)
+        self.module_tabs.set_current(DEVELOP_PAGE)
 
     def open_in_develop(self, photo: Photo) -> None:
         if photo.is_missing or not Path(photo.path).exists():
@@ -277,6 +296,7 @@ class MainWindow(QMainWindow):
             self._current_photo = photo
             self.before_after_action.setChecked(False)
             self.pages.setCurrentIndex(DEVELOP_PAGE)
+            self.module_tabs.set_current(DEVELOP_PAGE)
 
     # ---------- batch export ----------
 
@@ -323,6 +343,44 @@ class MainWindow(QMainWindow):
     def _on_export_failed(self, message: str) -> None:
         self.library_export_panel.show_idle("")
         QMessageBox.critical(self, "Export failed", message)
+
+    # ---------- presets ----------
+
+    def refresh_presets(self) -> None:
+        self.develop_view.preset_panel.set_presets(self.catalog.list_presets())
+
+    def _on_preset_apply(self, preset_id: int) -> None:
+        if not self.develop_view.has_photo():
+            self._show_status("Open a photo before applying a preset")
+            return
+        preset = self.catalog.get_preset(preset_id)
+        if preset is None:
+            self.refresh_presets()  # deleted in another window, or stale list
+            return
+        self.develop_view.apply_edit_state(preset.edits)
+        self.flush_pending_edits()
+        self._show_status(f"Applied preset '{preset.name}'")
+
+    def _on_preset_save(self, name: str) -> None:
+        if not self.develop_view.has_photo():
+            self._show_status("Open a photo before saving a preset")
+            return
+        existing = self.catalog.get_preset_by_name(name)
+        if existing is not None:
+            confirm = QMessageBox.question(
+                self, "Replace preset?", f"'{name}' already exists. Replace it?"
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+        self.catalog.save_preset(name, self.develop_view.edit_state())
+        self.refresh_presets()
+        self._show_status(f"Saved preset '{name}'")
+
+    def _on_preset_delete(self, preset_id: int) -> None:
+        self.catalog.delete_preset(preset_id)
+        self.refresh_presets()
+        self._show_status("Preset deleted")
 
     # ---------- edit persistence ----------
 

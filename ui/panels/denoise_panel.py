@@ -4,7 +4,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -14,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.edit_state import DEFAULT_DENOISE_AMOUNT
+from ui.collapsible_panel import CollapsiblePanel
 from ui.panels.exposure_panel import ResettableSlider
 
 # Full strength scrubs fine detail along with the noise, so the slider defaults to a
@@ -30,8 +30,9 @@ class DenoisePanel(QWidget):
         super().__init__(parent)
 
         layout = QVBoxLayout(self)
-        group = QGroupBox("AI Denoise")
-        group_layout = QVBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.panel = CollapsiblePanel("AI Denoise", self)
+        group_layout = self.panel.content_layout()
 
         self.checkbox = QCheckBox("Enable AI Denoise (GPU)")
         self.checkbox.toggled.connect(self.enabled_toggled)
@@ -72,8 +73,7 @@ class DenoisePanel(QWidget):
         self.status_label.setWordWrap(True)
         group_layout.addWidget(self.status_label)
 
-        layout.addWidget(group)
-        layout.addStretch()
+        layout.addWidget(self.panel)
         self._update_amount_enabled(self.checkbox.isChecked())
 
     # ---------- amount ----------

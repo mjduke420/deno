@@ -4,9 +4,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFormLayout, QGroupBox, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
 from core.tone_pipeline import ToneSettings
+from ui.collapsible_panel import CollapsiblePanel
 
 # (field name, display label, slider min, slider max, divisor to convert slider int -> float value)
 _SLIDER_SPECS = [
@@ -46,8 +47,12 @@ class ExposurePanel(QWidget):
         self._divisors: dict[str, float] = {}
 
         layout = QVBoxLayout(self)
-        group = QGroupBox("Exposure")
-        form = QFormLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.panel = CollapsiblePanel("Basic", self)
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(4)
+        self.panel.content_layout().addLayout(form)
 
         for field_name, label, lo, hi, divisor in _SLIDER_SPECS:
             slider = ResettableSlider()
@@ -70,8 +75,7 @@ class ExposurePanel(QWidget):
             row_layout.addWidget(value_label)
             form.addRow(label, row)
 
-        layout.addWidget(group)
-        layout.addStretch()
+        layout.addWidget(self.panel)
 
     def settings(self) -> ToneSettings:
         return self._settings

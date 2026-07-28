@@ -97,6 +97,18 @@ class Photo:
 
 
 @dataclass(frozen=True)
+class Preset:
+    id: int
+    name: str
+    edits_json: str
+    created_at: str
+
+    @property
+    def edits(self) -> EditState:
+        return EditState.from_json(self.edits_json)
+
+
+@dataclass(frozen=True)
 class PhotoFilter:
     folder_id: int | None = None
     directory: str | None = None  # narrow to one directory within a catalogued folder
@@ -163,6 +175,13 @@ class Catalog:
                     color_label     TEXT,
                     edits_json      TEXT,
                     is_missing      INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS presets (
+                    id         INTEGER PRIMARY KEY,
+                    name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    edits_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);
@@ -384,6 +403,45 @@ class Catalog:
         photo = self.get_photo(photo_id)
         return photo.edits if photo else EditState()
 
+    # ---------- presets ----------
+
+    def save_preset(self, name: str, edits: EditState) -> int:
+        """Store a named set of adjustments. Saving over an existing name replaces it,
+        which is what 'save' means when the name already appears in the list."""
+        name = name.strip()
+        if not name:
+            raise ValueError("preset name cannot be empty")
+        created_at = format_timestamp(datetime.now(timezone.utc))
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO presets (name, edits_json, created_at) VALUES (?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET edits_json = excluded.edits_json
+                """,
+                (name, edits.to_json(), created_at),
+            )
+            row = self._conn.execute("SELECT id FROM presets WHERE name = ?", (name,)).fetchone()
+        return int(row["id"])
+
+    def list_presets(self) -> list[Preset]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM presets ORDER BY name COLLATE NOCASE").fetchall()
+        return [_to_preset(row) for row in rows]
+
+    def get_preset(self, preset_id: int) -> Preset | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM presets WHERE id = ?", (preset_id,)).fetchone()
+        return _to_preset(row) if row else None
+
+    def get_preset_by_name(self, name: str) -> Preset | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM presets WHERE name = ?", (name.strip(),)).fetchone()
+        return _to_preset(row) if row else None
+
+    def delete_preset(self, preset_id: int) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM presets WHERE id = ?", (preset_id,))
+
     # ---------- internals ----------
 
     def _update_photo(self, photo_id: int, column: str, value) -> None:
@@ -412,6 +470,15 @@ def _validate_flag(flag: str) -> None:
 def _validate_color_label(color_label: str) -> None:
     if color_label not in COLOR_LABELS:
         raise ValueError(f"color_label must be one of {COLOR_LABELS} or None, got {color_label!r}")
+
+
+def _to_preset(row: sqlite3.Row) -> Preset:
+    return Preset(
+        id=row["id"],
+        name=row["name"],
+        edits_json=row["edits_json"],
+        created_at=row["created_at"],
+    )
 
 
 def _to_photo(row: sqlite3.Row) -> Photo:

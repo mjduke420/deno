@@ -7,7 +7,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QSlider,
@@ -16,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.lens_correction import LensSettings
+from ui.collapsible_panel import CollapsiblePanel
 from ui.panels.exposure_panel import ResettableSlider
 
 # (field name, display label, slider min, slider max)
@@ -35,8 +35,12 @@ class LensPanel(QWidget):
         self._value_labels: dict[str, QLabel] = {}
 
         layout = QVBoxLayout(self)
-        group = QGroupBox("Lens Corrections")
-        form = QFormLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.panel = CollapsiblePanel("Lens Corrections", self)
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(4)
+        self.panel.content_layout().addLayout(form)
 
         for field_name, label, lo, hi in _SLIDER_SPECS:
             slider = ResettableSlider()
@@ -62,8 +66,7 @@ class LensPanel(QWidget):
         self._ca_checkbox.toggled.connect(self._on_ca_toggled)
         form.addRow(self._ca_checkbox)
 
-        layout.addWidget(group)
-        layout.addStretch()
+        layout.addWidget(self.panel)
 
     def settings(self) -> LensSettings:
         return self._settings

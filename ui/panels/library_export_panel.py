@@ -4,7 +4,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -13,6 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ui.collapsible_panel import CollapsiblePanel
 
 SCOPE_SELECTED = "selected"
 SCOPE_FILTERED = "filtered"
@@ -27,8 +27,9 @@ class LibraryExportPanel(QWidget):
         self._quality = _DEFAULT_QUALITY
 
         layout = QVBoxLayout(self)
-        group = QGroupBox("Batch Export")
-        box = QVBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.panel = CollapsiblePanel("Batch Export", self)
+        box = self.panel.content_layout()
 
         self.scope_combo = QComboBox()
         self.scope_combo.addItem("Selected photos", SCOPE_SELECTED)
@@ -63,8 +64,7 @@ class LibraryExportPanel(QWidget):
         self.status_label.setWordWrap(True)
         box.addWidget(self.status_label)
 
-        layout.addWidget(group)
-        layout.addStretch()
+        layout.addWidget(self.panel)
 
     def _on_quality_changed(self, value: int) -> None:
         self._quality = value
