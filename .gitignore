@@ -10,6 +10,8 @@ models/
 *.jpg
 *.jpeg
 *.png
+# ...except the interface screenshots the README uses
+!docs/*.png
 *.tif
 *.tiff
 *.CR3

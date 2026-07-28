@@ -55,6 +55,22 @@ class EditState:
             denoise_amount=_clamp_unit(amount),
         )
 
+    def without_denoise(self) -> "EditState":
+        """The same look, minus denoise.
+
+        Denoise is a per-photo decision — it costs a GPU pass and depends on that
+        frame's ISO — so a preset carries the look and leaves denoise alone.
+        """
+        return replace(self, denoise_enabled=False, denoise_amount=DEFAULT_DENOISE_AMOUNT)
+
+    def merged_with(self, other: "EditState") -> "EditState":
+        """This state's tone and lens, keeping `other`'s denoise settings."""
+        return replace(
+            self,
+            denoise_enabled=other.denoise_enabled,
+            denoise_amount=other.denoise_amount,
+        )
+
     def is_default(self) -> bool:
         """True when nothing has been adjusted — lets the UI show an 'edited' badge."""
         return self == EditState()

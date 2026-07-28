@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from core.tone_pipeline import ToneSettings, apply_tone
+from core.tone_pipeline import (
+    NEUTRAL_TEMPERATURE,
+    ToneSettings,
+    apply_tone,
+    white_balance_gains,
+)
 
 
 def test_default_settings_are_identity():
@@ -160,6 +165,116 @@ def test_new_sliders_default_to_no_op():
     settings = ToneSettings()
     assert settings.clarity == 0.0 and settings.vibrance == 0.0 and settings.dehaze == 0.0
     np.testing.assert_allclose(apply_tone(img, settings), img, atol=1e-5)
+
+
+# ---------- white balance ----------
+
+
+def test_neutral_temperature_and_tint_change_nothing():
+    assert white_balance_gains(NEUTRAL_TEMPERATURE, 0.0) == (1.0, 1.0, 1.0)
+
+
+def test_raising_the_temperature_warms_the_image():
+    """Higher Kelvin reads as warmer, matching how the slider is labelled."""
+    red, _, blue = white_balance_gains(NEUTRAL_TEMPERATURE + 2000, 0.0)
+    assert red > 1.0 > blue
+
+
+def test_lowering_the_temperature_cools_the_image():
+    red, _, blue = white_balance_gains(NEUTRAL_TEMPERATURE - 2000, 0.0)
+    assert blue > 1.0 > red
+
+
+def test_white_balance_does_not_shift_overall_brightness():
+    """Green is the anchor, so a colour shift shouldn't read as an exposure change."""
+    for kelvin in (3000.0, 5500.0, 9000.0):
+        assert white_balance_gains(kelvin, 0.0)[1] == 1.0
+
+
+def test_negative_tint_pushes_green_and_positive_pushes_magenta():
+    green_side = white_balance_gains(NEUTRAL_TEMPERATURE, -100.0)
+    magenta_side = white_balance_gains(NEUTRAL_TEMPERATURE, 100.0)
+
+    # Relative to green (anchored at 1.0), red and blue drop for green, rise for magenta.
+    assert green_side[0] < 1.0 and green_side[2] < 1.0
+    assert magenta_side[0] > 1.0 and magenta_side[2] > 1.0
+
+
+def test_temperature_is_clamped_to_a_sane_range():
+    """Absurd values must not produce a divide-by-zero or a black frame."""
+    for kelvin in (1.0, 10.0, 1_000_000.0):
+        gains = white_balance_gains(kelvin, 0.0)
+        assert all(g > 0 for g in gains)
+
+
+def test_warming_a_grey_image_makes_it_warmer():
+    grey = np.full((8, 8, 3), 0.3, dtype=np.float32)
+
+    warmed = apply_tone(grey, ToneSettings(temperature=8000.0))
+
+    assert warmed[..., 0].mean() > warmed[..., 2].mean()
+
+
+# ---------- saturation ----------
+
+
+def test_saturation_increases_colour_spread():
+    img = _colored_image(0.06)
+    boosted = apply_tone(img, ToneSettings(saturation=80.0))
+
+    before = float(img.max(axis=-1).mean() - img.min(axis=-1).mean())
+    after = float(boosted.max(axis=-1).mean() - boosted.min(axis=-1).mean())
+    assert after > before
+
+
+def test_full_negative_saturation_produces_grey():
+    img = _colored_image(0.08)
+    grey = apply_tone(img, ToneSettings(saturation=-100.0))
+
+    spread = float(grey.max(axis=-1).mean() - grey.min(axis=-1).mean())
+    assert spread < 1e-3
+
+
+def test_saturation_treats_muted_and_vivid_colours_alike():
+    """This is what separates saturation from vibrance."""
+
+    def gain(saturation):
+        img = _colored_image(saturation)
+        before = float(img.max(axis=-1).mean() - img.min(axis=-1).mean())
+        after_img = apply_tone(img, ToneSettings(saturation=50.0))
+        after = float(after_img.max(axis=-1).mean() - after_img.min(axis=-1).mean())
+        return after / before
+
+    assert gain(0.03) == pytest.approx(gain(0.12), rel=0.15)
+
+
+def test_pushing_highlights_and_shadows_together_preserves_tonal_range():
+    """Recovering both ends is an ordinary edit; it must not flatten the picture.
+
+    Regression: highlights and shadows each moved a tone by up to 0.5, so a preset
+    pushing both squeezed the histogram into a narrow band and looked muddy.
+    """
+    gradient = np.linspace(0.01, 0.95, 256, dtype=np.float32)
+    img = np.repeat(gradient[None, :, None], 8, axis=0).repeat(3, axis=2)
+
+    plain = apply_tone(img, ToneSettings())
+    pushed = apply_tone(img, ToneSettings(highlights=-100.0, shadows=74.0))
+
+    def spread(x):
+        return float(np.percentile(x, 95) - np.percentile(x, 5))
+
+    # A full 0..1 gradient is the worst case — real photos span less and fare better
+    # (measured at 85% on a real frame). The old behaviour scored 0.30 here.
+    assert spread(pushed) > spread(plain) * 0.45
+
+
+def test_highlights_still_meaningfully_recover():
+    """The other half of the trade-off: it has to actually do something."""
+    bright = np.full((8, 8, 3), 0.85, dtype=np.float32)
+
+    recovered = apply_tone(bright, ToneSettings(highlights=-100.0))
+
+    assert recovered.mean() < bright.mean() * 0.8
 
 
 def test_output_is_always_clipped_to_valid_range():

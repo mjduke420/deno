@@ -38,6 +38,17 @@ TONE_CASES = [
     ToneSettings(dehaze=60.0),
     ToneSettings(dehaze=-60.0),
     ToneSettings(exposure=0.4, vibrance=40.0, dehaze=30.0),
+    ToneSettings(temperature=8000.0),
+    ToneSettings(temperature=3200.0),
+    ToneSettings(tint=-60.0),
+    ToneSettings(tint=60.0),
+    ToneSettings(saturation=60.0),
+    ToneSettings(saturation=-60.0),
+    # The Skittles preset, exercised end to end through the GPU path.
+    ToneSettings(
+        temperature=5850.0, tint=-8.0, contrast=30.0, highlights=-100.0, shadows=74.0,
+        whites=38.0, blacks=-20.0, clarity=15.0, dehaze=30.0, vibrance=40.0, saturation=-5.0,
+    ),
 ]
 
 

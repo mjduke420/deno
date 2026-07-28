@@ -386,7 +386,8 @@ def test_deleting_a_preset_removes_it_from_the_panel(window):
     window._on_preset_delete(preset_id)
 
     assert window.catalog.get_preset(preset_id) is None
-    assert window.develop_view.preset_panel.preset_combo.count() == 1  # just "none"
+    combo = window.develop_view.preset_panel.preset_combo
+    assert "Doomed" not in [combo.itemText(i) for i in range(combo.count())]
 
 
 def test_applying_a_deleted_preset_is_handled(window):
@@ -397,6 +398,59 @@ def test_applying_a_deleted_preset_is_handled(window):
     window.catalog.delete_preset(preset_id)
 
     window._on_preset_apply(preset_id)  # must not raise
+
+
+def test_saved_presets_do_not_capture_denoise(window):
+    """Denoise is per-photo — it costs a GPU pass and depends on that frame's ISO."""
+    photo = window.grid_model.photo_at(0)
+    window.open_in_develop(photo)
+    window.develop_view._on_denoise_amount_changed(0.25)
+    window.develop_view.pipeline.denoise_enabled = True
+
+    window._on_preset_save("Look Only")
+
+    stored = window.catalog.get_preset_by_name("Look Only").edits
+    assert stored.denoise_enabled is False
+
+
+def test_applying_a_preset_leaves_the_photos_own_denoise_alone(window):
+    first = window.grid_model.photo_at(0)
+    window.open_in_develop(first)
+    window.develop_view._on_tone_settings_changed(ToneSettings(contrast=40.0))
+    window._on_preset_save("Punchy Look")
+    preset_id = window.catalog.get_preset_by_name("Punchy Look").id
+
+    second = window.grid_model.photo_at(1)
+    window.open_in_develop(second)
+    window.develop_view._on_denoise_amount_changed(0.25)
+
+    window._on_preset_apply(preset_id)
+
+    state = window.develop_view.edit_state()
+    assert state.tone.contrast == 40.0  # the preset's look arrived
+    assert state.denoise_amount == 0.25  # the photo's denoise survived
+
+
+def test_skittles_is_available_out_of_the_box(window):
+    preset = window.catalog.get_preset_by_name("Skittles")
+
+    assert preset is not None
+    assert preset.edits.tone.temperature == 5850.0
+    assert preset.edits.tone.tint == -8.0
+
+
+def test_applying_skittles_sets_the_white_balance_sliders(window):
+    photo = window.grid_model.photo_at(0)
+    window.open_in_develop(photo)
+    preset_id = window.catalog.get_preset_by_name("Skittles").id
+
+    window._on_preset_apply(preset_id)
+
+    settings = window.develop_view.exposure_panel.settings()
+    assert settings.temperature == 5850.0
+    assert settings.tint == -8.0
+    assert settings.shadows == 74.0
+    assert settings.saturation == -5.0
 
 
 def test_saving_a_preset_without_a_photo_is_refused(window):

@@ -27,11 +27,13 @@ from core.lens_correction import (
 )
 from core.tone_pipeline import (
     _DEHAZE_STRENGTH,
+    HIGHLIGHT_SHADOW_STRENGTH,
     _POINT_RANGE,
     _WORKING_GAMMA,
     ToneSettings,
     apply_tone,
     clarity_blur_radius,
+    white_balance_gains,
 )
 
 DEFAULT_MAX_DIMENSION = 2048
@@ -132,7 +134,12 @@ def _lens_is_active(lens: LensSettings) -> bool:
 
 def _gpu_tone(torch, image, tone: ToneSettings):
     """Mirror of `core.tone_pipeline.apply_tone`."""
-    img = image * (2.0**tone.exposure)
+    img = image
+    gains = white_balance_gains(tone.temperature, tone.tint)
+    if gains != (1.0, 1.0, 1.0):
+        img = img * torch.tensor(gains, device=img.device, dtype=img.dtype)
+
+    img = img * (2.0**tone.exposure)
     img = torch.clamp(img, min=0.0).pow(_WORKING_GAMMA)
 
     if tone.dehaze:
@@ -145,8 +152,8 @@ def _gpu_tone(torch, image, tone: ToneSettings):
     luminance = img.mean(dim=-1, keepdim=True)
     shadow_mask = torch.clamp(1.0 - 2.0 * luminance, 0.0, 1.0).pow(2)
     highlight_mask = torch.clamp(2.0 * luminance - 1.0, 0.0, 1.0).pow(2)
-    img = img + (tone.shadows / 100.0) * 0.5 * shadow_mask
-    img = img + (tone.highlights / 100.0) * 0.5 * highlight_mask
+    img = img + (tone.shadows / 100.0) * HIGHLIGHT_SHADOW_STRENGTH * shadow_mask
+    img = img + (tone.highlights / 100.0) * HIGHLIGHT_SHADOW_STRENGTH * highlight_mask
 
     img = 0.5 + (img - 0.5) * (1.0 + tone.contrast / 100.0)
 
@@ -154,9 +161,17 @@ def _gpu_tone(torch, image, tone: ToneSettings):
         img = _gpu_clarity(torch, img, tone.clarity)
     if tone.vibrance:
         img = _gpu_vibrance(torch, img, tone.vibrance)
+    if tone.saturation:
+        img = _gpu_saturation(img, tone.saturation)
 
     img = torch.clamp(img, 0.0, 1.0)
     return img.pow(1.0 / _WORKING_GAMMA)
+
+
+def _gpu_saturation(img, amount: float):
+    """Mirror of `core.tone_pipeline._apply_saturation`."""
+    grey = img.mean(dim=-1, keepdim=True)
+    return grey + (img - grey) * (1.0 + amount / 100.0)
 
 
 def _gpu_clarity(torch, img, amount: float):

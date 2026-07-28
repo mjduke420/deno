@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.builtin_presets import seed_builtin_presets
 from core.catalog import Catalog, Photo, PhotoFilter, default_catalog_dir
 from core.scanner import read_metadata
 from core.thumbnails import ThumbnailCache
@@ -59,6 +60,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._build_menu()
+        seed_builtin_presets(self.catalog)
         self.refresh_folders()
         self.refresh_photos()
         self.refresh_presets()
@@ -357,7 +359,9 @@ class MainWindow(QMainWindow):
         if preset is None:
             self.refresh_presets()  # deleted in another window, or stale list
             return
-        self.develop_view.apply_edit_state(preset.edits)
+        # Keep this photo's own denoise settings; a preset carries the look only.
+        look = preset.edits.merged_with(self.develop_view.edit_state())
+        self.develop_view.apply_edit_state(look)
         self.flush_pending_edits()
         self._show_status(f"Applied preset '{preset.name}'")
 
@@ -373,7 +377,9 @@ class MainWindow(QMainWindow):
             if confirm != QMessageBox.StandardButton.Yes:
                 return
 
-        self.catalog.save_preset(name, self.develop_view.edit_state())
+        # Denoise is deliberately excluded — it is per-photo, costs a GPU pass, and
+        # depends on that frame's ISO rather than on the look being saved.
+        self.catalog.save_preset(name, self.develop_view.edit_state().without_denoise())
         self.refresh_presets()
         self._show_status(f"Saved preset '{name}'")
 

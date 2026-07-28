@@ -184,6 +184,11 @@ class Catalog:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS settings (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);
                 CREATE INDEX IF NOT EXISTS idx_photos_rating ON photos(rating);
                 """
@@ -402,6 +407,22 @@ class Catalog:
     def load_edits(self, photo_id: int) -> EditState:
         photo = self.get_photo(photo_id)
         return photo.edits if photo else EditState()
+
+    # ---------- settings ----------
+
+    def get_setting(self, key: str) -> str | None:
+        """Small key/value store for application state that belongs with the library."""
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
 
     # ---------- presets ----------
 

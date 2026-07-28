@@ -6,6 +6,21 @@ star ratings, develop the keepers with GPU AI denoise, and batch-export portfoli
 Non-destructive and reference-in-place — your original RAW files are never modified,
 moved or copied.
 
+### Library
+
+Browse, cull and rate a shoot. Ratings, pick flags and colour labels are applied from
+the keyboard across a whole selection and shown on the thumbnails.
+
+![Library module](docs/library.png)
+
+### Develop
+
+Histogram with clipping indicators, presets, white balance, tone, presence, GPU AI
+denoise and lens corrections. Sliders render from a GPU-resident proxy, so they keep
+up with the mouse.
+
+![Develop module](docs/develop.png)
+
 ## Running
 
 ```bash
